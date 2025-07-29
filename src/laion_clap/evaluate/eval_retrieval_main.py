@@ -5,12 +5,13 @@ import numpy as np
 import logging
 import wandb
 import torch
+from tqdm import tqdm
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 from clap_module import create_model
 from clap_module import tokenize
 from training.logger import setup_logging
-from training.data import get_data
+from training.data_instruct import get_data
 from training.train import evaluate
 from clap_module.utils import get_tar_path_from_dataset_name, dataset_split
 from training.params import parse_args
@@ -33,29 +34,26 @@ def evaluate_zeroshot(model, data, start_epoch, args, writer):
     metrics.update({"epoch": start_epoch})
 
     all_audio_features = []
+    all_text_features = []
     all_class_labels = []
     with torch.no_grad():
-        for i, batch in enumerate(dataloader):
+        for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
             audios = batch  # contains mel_spec, wavform, and longer list
             audio_features = model(audios, None, device)
             audio_features = F.normalize(audio_features, dim=-1)
             all_audio_features.append(audio_features.detach().cpu())
-            all_class_labels.append(torch.argmax(batch["class_label"], 1).long())
+            texts = batch['text']
+            text_features = model(None, texts, device)
+            text_features = F.normalize(text_features, dim=-1)
+            all_text_features.append(text_features.detach().cpu())
+
+            # all_class_labels.append(torch.argmax(batch["class_label"], 1).long())
+        
         all_audio_features = torch.cat(all_audio_features, dim=0)
-        all_class_labels = torch.cat(all_class_labels, dim=0)
+        all_text_features = torch.cat(all_text_features, dim=0)
         metrics["num_samples"] = all_audio_features.shape[0]
 
-        # get text features
-        all_texts = ["This is a sound of " + t for t in args.class_index_dict.keys()]
-        # (yusong): a hack, can make it better
-        if args.tmodel == "transformer":
-            from clap_module.tokenizer import tokenize
-            all_texts = tokenize(all_texts)
-        else:
-            from training.data import tokenizer
-            all_texts = tokenizer(all_texts)
-        all_text_features = model(None, all_texts, device)
-        all_text_features = F.normalize(all_text_features, dim=-1).detach().cpu()
+        # all_class_labels = torch.cat(all_class_labels, dim=0)
 
         # compute similarity
         logit_scale_a, logit_scale_t = model(None, None, device)
@@ -64,7 +62,7 @@ def evaluate_zeroshot(model, data, start_epoch, args, writer):
         logits_per_audio = (logit_scale_a * all_audio_features @ all_text_features.t()).detach().cpu()
         logits_per_text = logits_per_audio.t().detach().cpu()
 
-        ground_truth = all_class_labels.view(-1, 1)
+        ground_truth = torch.arange(len(all_audio_features)).view(-1, 1)
         logit = logits_per_audio
 
         ranking = torch.argsort(logit, descending=True)
@@ -72,6 +70,7 @@ def evaluate_zeroshot(model, data, start_epoch, args, writer):
         preds = preds.detach().cpu().numpy()
         metrics[f"{args.datasetnames[0]}_mean_rank"] = preds.mean() + 1
         metrics[f"{args.datasetnames[0]}_median_rank"] = np.floor(np.median(preds)) + 1
+
         for k in [1, 5, 10]:
             metrics[f"{args.datasetnames[0]}_R@{k}"] = np.mean(preds < k)
         # map@10
@@ -112,9 +111,9 @@ if __name__ == '__main__':
 
     cudnn.benchmark = True
     cudnn.deterministic = False
-    pretrained = 'openai'
-    amodel = find_params_value(params_file, 'amodel')
-    tmodel = find_params_value(params_file, 'tmodel')
+    pretrained = args.pretrained
+    amodel = args.amodel
+    tmodel = args.tmodel
 
     if amodel is None or tmodel is None:
         raise ValueError('model type not found in params file')
@@ -160,6 +159,8 @@ if __name__ == '__main__':
             proportion=1,
             dataset_path=args.datasetpath,
         )
+    
+    
     model, model_cfg = create_model(
         amodel,
         tmodel,
@@ -171,9 +172,10 @@ if __name__ == '__main__':
         openai_model_cache_dir=os.path.expanduser(args.openai_model_cache_dir),
         skip_params=False,
         enable_fusion=args.enable_fusion,
-        fusion_type=args.fusion_type
+        fusion_type=args.fusion_type,
     )  # a hack to get model_cfg
 
+    args.distributed = False
     data = get_data(args, model_cfg=model_cfg)  # (yusong): hack: no model_cfg needed to get data
 
     writer = None  # if use tensorboard, initalize writer here
@@ -231,16 +233,15 @@ if __name__ == '__main__':
         )
 
         # load model
-        checkpoint = torch.load(model_path, map_location=device)
+        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
         if "epoch" in checkpoint:
             # resuming a train checkpoint w/ epoch and optimizer state
+
             start_epoch = checkpoint["epoch"]
             sd = checkpoint["state_dict"]
-            if next(iter(sd.items()))[0].startswith(
-                    "module"
-            ):
+            if next(iter(sd.items()))[0].startswith("module"):
                 sd = {k[len("module."):]: v for k, v in sd.items()}
-            model.load_state_dict(sd)
+            model.load_state_dict(sd, strict=False)
             logging.info(
                 f"=> resuming checkpoint '{model_path}' (epoch {start_epoch})"
             )
@@ -249,9 +250,13 @@ if __name__ == '__main__':
             model.load_state_dict(checkpoint)
             start_epoch = 0
 
+       
+
         model.to(device)
         model.eval()
         for param in model.parameters():
             param.requires_grad = False
+
+
 
         evaluate_zeroshot(model, data, start_epoch, args, writer)
