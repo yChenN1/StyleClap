@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=clap_finetune
-#SBATCH --output=slurm_logs/%x_%j.out
-#SBATCH --error=slurm_logs/%x_%j.err
-#SBATCH --partition=a100
+#SBATCH --output=./%x_%j.out
+#SBATCH --error=./%x_%j.err
+#SBATCH --partition=rtx8000
 #SBATCH --gpus=2
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=2
-#SBATCH --mem=200G
+#SBATCH --mem=100G
 #SBATCH --time=03-00:00:00 
 
 source ~/.bashrc
@@ -17,14 +17,14 @@ cd /mnt/fast/nobackup/users/yc01815/code/CLAP/src/laion_clap
 
 mkdir -p slurm_logs
 
-torchrun --nproc-per-node=1 --master-port=21316 -- \
+WANDB_MODE=online torchrun --nproc-per-node=2 --master-port=21316 -- \
   -m training.main \
   --save-frequency 5 \
   --save-top-performance 3 \
   --save-most-recent \
   --dataset-type="toy" \
   --precision="fp32" \
-  --batch-size=32 \
+  --batch-size=96 \
   --lr=1e-5 \
   --wd=0.0 \
   --epochs=45 \
@@ -33,7 +33,7 @@ torchrun --nproc-per-node=1 --master-port=21316 -- \
   --use-bn-sync \
   --amodel HTSAT-base \
   --tmodel roberta \
-  --warmup 50 \
+  --warmup 1000 \
   --train-data '/mnt/fast/nobackup/scratch4weeks/yc01815/llasa/dataset/VST_chunks/*.parquet'\
   --val-data '/mnt/fast/nobackup/scratch4weeks/yc01815/llasa/dataset/VST_chunks_valid/chunk_valid.parquet' \
   --report-to "wandb" \
