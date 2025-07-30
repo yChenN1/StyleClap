@@ -1,0 +1,4 @@
+exp/
+*.log
+*.pyc
+*.pt

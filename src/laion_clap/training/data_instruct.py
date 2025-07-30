@@ -822,7 +822,7 @@ def get_toy_dataset(args, model_cfg, data_split, is_train):
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
-        shuffle=True if is_train else False,
+        shuffle=False,
         num_workers=args.workers,
         sampler=sampler,
         drop_last=is_train,

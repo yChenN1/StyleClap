@@ -17,7 +17,7 @@ black==24.1.1
 blobfile==3.0.0
 boto3==1.38.32
 botocore==1.38.32
-Bottleneck @ file:///croot/bottleneck_1731058641041/work
+Bottleneck
 braceexpand==0.1.7
 cached_path==1.7.3
 cachetools==5.5.2
@@ -35,12 +35,12 @@ conformer==0.3.2
 contourpy==1.3.2
 csvw==3.5.1
 cycler==0.12.1
-Cython @ file:///home/conda/feedstock_root/build_artifacts/cython_1739227941089/work
+Cython
 datasets==3.6.0
 decorator==5.2.1
 Deprecated==1.2.18
 descript-audio-codec==1.0.0
-descript-audiotools @ git+https://github.com/descriptinc/audiotools@348ebf2034ce24e2a91a553e3171cb00c0c71678
+# descript-audiotools @ git+https://github.com/descriptinc/audiotools@348ebf2034ce24e2a91a553e3171cb00c0c71678
 diffusers==0.29.0
 dill==0.3.8
 Distance==0.1.3
@@ -109,7 +109,7 @@ julius==0.2.7
 kagglehub==0.3.12
 kiwisolver==1.4.8
 laion_clap==1.1.7
-LangSegment==0.3.5
+LangSegment
 language-tags==1.2.0
 lazy_loader==0.4
 librosa==0.11.0
@@ -136,8 +136,8 @@ ninja==1.11.1.4
 nltk==3.9.1
 nodeenv==1.9.1
 numba==0.60.0
-numexpr @ file:///croot/numexpr_1730215937391/work
-numpy @ file:///croot/numpy_and_numpy_base_1708638617955/work/dist/numpy-1.26.4-cp310-cp310-linux_x86_64.whl#sha256=ce136f308f566617937abac6c8f280bd61b41c12ab7eb7d8784c5795c5be477b
+numexpr
+numpy==1.26.4
 nvidia-cublas-cu11==11.10.3.66
 nvidia-cublas-cu12==12.4.5.8
 nvidia-cuda-cupti-cu11==11.7.101
@@ -199,14 +199,14 @@ pydub==0.25.1
 Pygments==2.19.1
 pykakasi==2.3.0
 pyloudnorm==0.1.1
-pyopenjtalk==0.4.0
+# pyopenjtalk==0.4.0
 pyparsing==3.2.1
 pypinyin==0.53.0
 pystoi==0.4.1
-python-dateutil @ file:///croot/python-dateutil_1716495738603/work
+python-dateutil
 python-multipart==0.0.20
-pytz @ file:///croot/pytz_1713974312559/work
-pyworld @ file:///home/conda/feedstock_root/build_artifacts/pyworld_1737585180298/work
+pytz
+pyworld
 PyYAML==6.0.2
 randomname==0.2.1
 RapidFuzz==3.12.2
@@ -235,7 +235,7 @@ sentencepiece==0.2.0
 sentry-sdk==2.29.1
 setproctitle==1.3.6
 shellingham==1.5.4
-six @ file:///tmp/build/80754af9/six_1644875935023/work
+six
 smmap==5.0.2
 sniffio==1.3.1
 soundfile==0.13.1
@@ -268,7 +268,7 @@ triton==3.2.0
 typeguard==4.4.2
 typer==0.15.2
 typing_extensions==4.12.2
-tzdata @ file:///croot/python-tzdata_1690578112552/work
+tzdata
 Unidecode==1.3.8
 uritemplate==4.1.1
 urllib3==2.3.0
