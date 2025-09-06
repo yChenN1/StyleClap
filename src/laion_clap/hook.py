@@ -312,7 +312,7 @@ class CLAP_LP(CLAP_Module):
             )
             audio_input.append(temp_dict)
         audio_input[0]['waveform'] = audio_input[0]['waveform'].unsqueeze(0)
-        logits = self.model(audio_input[0], device=self.device, return_embedding=True)
+        logits, audio_embed = self.model(audio_input[0], device=self.device, return_embedding=True)
         pred = logits.argmax(dim=1)
         if not use_tensor:
             pred = pred.detach().cpu().numpy()
