@@ -36,19 +36,53 @@ def evaluate_zeroshot(model, data, start_epoch, args, writer):
     all_audio_features = []
     all_text_features = []
     all_class_labels = []
+    all_names = []
+    seen_captions = set()
+
     with torch.no_grad():
         for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
+            # __import__('pdb').set_trace()
             audios = batch  # contains mel_spec, wavform, and longer list
+
+            captions = batch['caption']  # list of strings
+
+            # 跳过重复 caption
+            keep_indices = [j for j, c in enumerate(captions) if c not in seen_captions]
+            if not keep_indices:
+                continue
+
+            # 记录已见过的 caption
+            for j in keep_indices:
+                seen_captions.add(captions[j])
+            kept_captions = [captions[j] for j in keep_indices]
+            all_names.extend(kept_captions)
+
+            # 处理 audios
+            audios = {
+                k: (v[keep_indices] if isinstance(v, torch.Tensor) else [v[j] for j in keep_indices])
+                for k, v in batch.items()
+                if k not in ['caption', 'text']
+            }
+
+            # 处理 texts（是 dict）
+            texts = batch['text']
+            filtered_texts = {
+                k: v[keep_indices] if isinstance(v, torch.Tensor) else [v[j] for j in keep_indices]
+                for k, v in texts.items()
+            }
+
+            # 提取音频特征
             audio_features = model(audios, None, device)
             audio_features = F.normalize(audio_features, dim=-1)
-            all_audio_features.append(audio_features.detach().cpu())
-            texts = batch['text']
-            text_features = model(None, texts, device)
+            all_audio_features.append(audio_features.cpu())
+            
+            # 提取文本特征
+            text_features = model(None, filtered_texts, device)
             text_features = F.normalize(text_features, dim=-1)
-            all_text_features.append(text_features.detach().cpu())
+            all_text_features.append(text_features.cpu())
+
 
             # all_class_labels.append(torch.argmax(batch["class_label"], 1).long())
-        
         all_audio_features = torch.cat(all_audio_features, dim=0)
         all_text_features = torch.cat(all_text_features, dim=0)
         metrics["num_samples"] = all_audio_features.shape[0]
@@ -80,6 +114,16 @@ def evaluate_zeroshot(model, data, start_epoch, args, writer):
             f"Eval Epoch: {start_epoch} "
             + "\t".join([f"{k}: {round(v, 4):.4f}" for k, v in metrics.items()])
         )
+
+        topk = 100
+        top10_indices = torch.topk(logits_per_audio, k=topk, dim=1).indices  # shape: [num_texts, topk]
+        for i in range(min(1, top10_indices.size(0))):  # 只打印前 5 个 text 样本
+            print('ground truth text for this sample: ' + captions[i])
+            print(f"\nText #{i} top-{topk} matched audios:")
+            for j in range(topk):
+                idx = top10_indices[i, j].item()
+                print(f"  Rank {j+1}: {all_names[idx]}")
+        __import__('pdb').set_trace()
 
         if args.wandb:
             assert wandb is not None, "Please install wandb."
@@ -133,32 +177,32 @@ if __name__ == '__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     args.device = device
 
-    if args.remotedata:
-        for dataset_name in args.datasetnames:
-            for split in dataset_split[dataset_name]:
-                if not os.path.exists(f"./json_files/{dataset_name}/{split}"):
-                    os.makedirs(f"./json_files/{dataset_name}/{split}")
-                os.system(
-                    f"aws s3 cp s3://s-laion-audio/webdataset_tar/{dataset_name}/{split}/sizes.json ./json_files/{dataset_name}/{split}/sizes.json"
-                )
+    # if args.remotedata:
+    #     for dataset_name in args.datasetnames:
+    #         for split in dataset_split[dataset_name]:
+    #             if not os.path.exists(f"./json_files/{dataset_name}/{split}"):
+    #                 os.makedirs(f"./json_files/{dataset_name}/{split}")
+    #             os.system(
+    #                 f"aws s3 cp s3://s-laion-audio/webdataset_tar/{dataset_name}/{split}/sizes.json ./json_files/{dataset_name}/{split}/sizes.json"
+    #             )
 
     if args.datasetinfos is None:
         args.datasetinfos = ["train", "unbalanced_train", "balanced_train"]
-    if args.dataset_type == "webdataset":
-        args.train_data = get_tar_path_from_dataset_name(
-            args.datasetnames,
-            args.datasetinfos,
-            islocal=not args.remotedata,
-            proportion=args.dataset_proportion,
-            dataset_path=args.datasetpath,
-        )
-        args.val_data = get_tar_path_from_dataset_name(
-            args.datasetnames,
-            ["valid", "test", "eval"],
-            islocal=not args.remotedata,
-            proportion=1,
-            dataset_path=args.datasetpath,
-        )
+    # if args.dataset_type == "webdataset":
+    #     args.train_data = get_tar_path_from_dataset_name(
+    #         args.datasetnames,
+    #         args.datasetinfos,
+    #         islocal=not args.remotedata,
+    #         proportion=args.dataset_proportion,
+    #         dataset_path=args.datasetpath,
+    #     )
+    #     args.val_data = get_tar_path_from_dataset_name(
+    #         args.datasetnames,
+    #         ["valid", "test", "eval"],
+    #         islocal=not args.remotedata,
+    #         proportion=1,
+    #         dataset_path=args.datasetpath,
+    #     )
     
     
     model, model_cfg = create_model(
@@ -256,7 +300,5 @@ if __name__ == '__main__':
         model.eval()
         for param in model.parameters():
             param.requires_grad = False
-
-
 
         evaluate_zeroshot(model, data, start_epoch, args, writer)

@@ -7,6 +7,7 @@ import random
 import h5py
 from dataclasses import dataclass
 from datasets import load_dataset
+import braceexpand
 import numpy as np
 import pandas as pd
 import torch
@@ -21,9 +22,11 @@ from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler
 from torch.utils.data.distributed import DistributedSampler
 from functools import partial
 from pathlib import Path
+import wget
+import tempfile
+import copy
 from torch.nn.utils.rnn import pad_sequence
 from contextlib import suppress
-from tqdm import tqdm
 
 from clap_module.utils import get_tar_path_from_dataset_name, dataset_split
 from clap_module.utils import load_p, load_class_label
@@ -103,6 +106,77 @@ def float32_to_int16_torch(x):
     x = torch.clamp(x, min=-1., max=1.)
     return (x * 32767.).type(torch.int16)
 
+def gender_mapping(gender):
+    if gender == 'female':
+        return 0
+    elif gender == 'male':
+        return 1
+    else:
+        raise ValueError(f"Unknown gender: {gender}")
+
+def age_mapping(age):
+    if age == 'Elderly':
+        return 0
+    elif age == 'Middle-aged':
+        return 1
+    elif age == 'Young Adult':
+        return 2
+    elif age == 'Teenager':
+        return 3
+    elif age == 'Child':
+        return 4
+    else:
+        raise ValueError(f"Unknown age: {age}")
+    
+def speed_mapping(speed):
+    if speed == 'slow':
+        return 0
+    elif speed == 'normal':
+        return 1
+    elif speed == 'fast':
+        return 2
+    else:
+        raise ValueError(f"Unknown speed: {speed}")
+
+def pitch_mapping(pitch):
+    if pitch == 'low':
+        return 0
+    elif pitch == 'normal':
+        return 1
+    elif pitch == 'high':
+        return 2
+    else:
+        raise ValueError(f"Unknown pitch: {pitch}")
+
+def energy_mapping(energy):
+    if energy == 'low':
+        return 0
+    elif energy == 'normal':
+        return 1
+    elif energy == 'high':
+        return 2
+    else:
+        raise ValueError(f"Unknown energy: {energy}")
+    
+def emotion_mapping(emotion):
+    if emotion == 'happy':
+        return 0
+    elif emotion == 'sad':
+        return 1
+    elif emotion == 'angry':
+        return 2
+    elif emotion == 'fearful':
+        return 3
+    elif emotion == 'disgusted':
+        return 4
+    elif emotion == 'surprised':
+        return 5
+    elif emotion == 'neutral' or emotion == 'natural':
+        return 6
+    else:
+        raise ValueError(f"Unknown emotion: {emotion}")
+    
+
 # For Toy Dataset
 class ToyDataset(Dataset):
     def __init__(self, data, model_cfg):
@@ -118,6 +192,9 @@ class ToyDataset(Dataset):
            eval_model (bool): to indicate if the dataset is a testing dataset
         """
         self.data = data
+        self.class_label = pd.read_csv("/mnt/bn/tanman-yg/chenqi/datas/gigaspeech/EN_labels.csv")
+        self.class_label.set_index("Key", inplace=True)
+
         self.audio_cfg = model_cfg["audio_cfg"]
         # self.eval_mode = eval_mode
 
@@ -144,7 +221,6 @@ class ToyDataset(Dataset):
     def crop_wav(self, x, crop_size=450000):
         # nealy 1024 after get mel
         if x.shape[0] <= crop_size:
-            x = np.concatenate([x, np.array([0.0] * (crop_size - len(x)))], axis=0).astype(np.float32)
             return x
         crop_pos = random.randint(0, len(x) - crop_size - 1)
         return x[crop_pos: crop_pos + crop_size]
@@ -198,26 +274,34 @@ class ToyDataset(Dataset):
             mel_spec[1:, :, :] = 0.0
         text = self.prompt_text(text)
 
-        class_label = torch.tensor(int(s_index['emotion_code']))
-
-        data_dict = {
-            "waveform": waveform,
-            "text": text,
-            "longer": longer,
-            "mel_fusion": mel_spec,
-            "audio_name": audio_name,
-            "caption": s_index['src_caption'],
-            "class_label": class_label
-        }
-        # else:
-        #     data_dict = {
-        #         "waveform": waveform,
-        #         "text": text,
-        #         "longer": longer,
-        #         "mel_fusion": mel_spec,
-        #         "audio_name": audio_name,
-        #         "caption": s_index['src_caption']
-        #     }
+        ### cls_label
+        if self.class_label is not None:
+            meta_info = self.class_label.loc[f'gigaspeech_{audio_name[:-4]}']
+            gender = gender_mapping(meta_info['Gender'])
+            age = age_mapping(meta_info['Age'])
+            speed = speed_mapping(meta_info['Speed'])
+            pitch = pitch_mapping(meta_info['Pitch'])
+            energy = energy_mapping(meta_info['Energy'])
+            emotion = emotion_mapping(meta_info['Emotion'])
+            class_label = torch.tensor([gender, age, speed, pitch, energy, emotion])
+            data_dict = {
+                "waveform": waveform,
+                "text": text,
+                "longer": longer,
+                "mel_fusion": mel_spec,
+                "audio_name": audio_name,
+                "caption": s_index['src_caption'],
+                "class_label": class_label
+            }
+        else:
+            data_dict = {
+                "waveform": waveform,
+                "text": text,
+                "longer": longer,
+                "mel_fusion": mel_spec,
+                "audio_name": audio_name,
+                "caption": s_index['src_caption']
+            }
         return data_dict
 
     def collate_fn(self, batch):
@@ -229,7 +313,6 @@ class ToyDataset(Dataset):
         caption = [item["caption"] for item in batch]
         
         waveforms_padded = pad_sequence(waveforms, batch_first=True)  # shape: (B, max_len)
-        print(waveforms_padded.shape)
         mel_fusions_stacked = self.pad_mel(mel_fusions)
         input_ids = torch.stack([item["input_ids"] for item in texts])
         attention_mask = torch.stack([item["attention_mask"] for item in texts])

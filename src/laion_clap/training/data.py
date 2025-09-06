@@ -464,7 +464,7 @@ def get_audio_features(sample, audio_data, max_len, data_truncating, data_fillin
                 )
             # random crop to max_len (for compatibility)
             overflow = len(audio_data) - max_len
-            idx = np.random.integers(0, overflow + 1)
+            idx = np.random.randint(0, overflow + 1)
             audio_data = audio_data[idx: idx + max_len]
 
         else:  # padding if too short

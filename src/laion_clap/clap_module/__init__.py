@@ -6,3 +6,4 @@ from .pretrained import list_pretrained, list_pretrained_tag_models, list_pretra
     get_pretrained_url, download_pretrained
 from .tokenizer import SimpleTokenizer, tokenize
 from .transform import image_transform
+from .linear_probe import LinearProbe

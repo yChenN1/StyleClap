@@ -457,6 +457,13 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--lp-out-ch",
+        type=int,
+        default=0,
+        help="Output channel of Linear Probe.",
+    )
+
+    parser.add_argument(
         "--lp-freeze",
         default=False,
         action="store_true",

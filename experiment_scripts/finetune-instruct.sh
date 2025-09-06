@@ -1,46 +1,76 @@
 #!/bin/bash
-#SBATCH --comment clap
-#SBATCH --partition=g40423
-#SBATCH --job-name=mclap
-#SBATCH --nodes 3
-#SBATCH --ntasks-per-node 8
-#SBATCH --cpus-per-gpu=6
-#SBATCH --exclusive
-#SBATCH --output=%x_%j.out
+EXP_NAME=$1
+CURR_DIR=$(pwd)
+export http_proxy=http://sys-proxy-rd-relay.byted.org:8118
+export https_proxy=http://sys-proxy-rd-relay.byted.org:8118
+export no_proxy=byted.org,bytedance.net,.byted.org,.bytedance.net,localhost,127.0.0.1,::1,10.0.0.0/8,127.0.0.0/8,fd00::/8,100.64.0.0/10,fe80::/10,172.16.0.0/12,169.254.0.0/16,192.168.0.0/16
+export HF_DATASETS_CACHE=/mnt/bn/tanman-yg/chenqi/datas/.hf_dataset_cache
 
-module load openmpi
-module load cuda/11.7
-export NCCL_PROTO=simple
-export FI_EFA_FORK_SAFE=1
-export FI_LOG_LEVEL=1
-export FI_EFA_USE_DEVICE_RDMA=1 # use for p4dn
-export NCCL_DEBUG=info
-export OMPI_MCA_mtl_base_verbose=1
-export FI_EFA_ENABLE_SHM_TRANSFER=0
-export FI_PROVIDER=efa
-export FI_EFA_TX_MIN_CREDITS=64
-export NCCL_TREE_THRESHOLD=0
+# 切换到目标执行目录
+cd ../src/laion_clap
 
-# sent to sub script
-export HOSTNAMES=`scontrol show hostnames "$SLURM_JOB_NODELIST"`
-export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-export MASTER_PORT=20155
-export COUNT_NODE=`scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l`
+# python evaluate/eval_linear_probe.py \
+#     --save-frequency 50 \
+#     --save-top-performance 3 \
+#     --save-most-recent \
+#     --dataset-type="toy" \
+#     --precision="fp32" \
+#     --warmup 0 \
+#     --batch-size=160 \
+#     --lr=1e-4 \
+#     --wd=0.1 \
+#     --epochs=100 \
+#     --workers=8 \
+#     --use-bn-sync \
+#     --freeze-text \
+#     --amodel HTSAT-base \
+#     --tmodel roberta \
+#     --train-data '/mnt/bn/tanman-yg/chenqi/datas/InstructSpeech_Dataset_filtered/*.parquet' \
+#     --val-data '/mnt/bn/tanman-yg/chenqi/datas/InstructSpeech_Dataset_eval_filtered/*.parquet' \
+#     --report-to "wandb" \
+#     --wandb-notes "finetune-instruct" \
+#     --datasetnames "instruct" \
+#     --datasetinfos "train" \
+#     --seed 3407 \
+#     --remotedata \
+#     --logs /mnt/bn/tanman-yg/chenqi/code/StyleClap/exp/${EXP_NAME} \
+#     --gather-with-grad \
+#     --lp-loss="ce" \
+#     --lp-metrics="acc" \
+#     --lp-lr=1e-4 \
+#     --lp-mlp \
+#     --lp-out-ch 28 \
+#     --openai-model-cache-dir /mnt/bn/tanman-yg/chenqi/code/StyleClap/pretrained/ \
+#     --pretrained="/mnt/bn/tanman-yg/chenqi/code/StyleClap/pretrained/" \
+#     --data-filling "repeatpad" \
+#     --data-truncating "rand_trunc" \
+#     --optimizer "adam"
 
-echo go $COUNT_NODE
-echo $HOSTNAMES
 
-# source ~/.bashrc
-# export TRANSFORMERS_CACHE=/fsx/yusong/transformers_cache
+export NCCL_CROSS_NIC=1
+export OMP_NUM_THREADS=1
+# export NCCL_ALGO=^Ring
+NUM_TOTAL_GPU=$((ARNOLD_WORKER_NUM*ARNOLD_WORKER_GPU))
+NUM_TOTAL_GPU=8
+ARNOLD_WORKER_NUM=1
+ARNOLD_ID=0
 
-srun --comment clap --cpu_bind=v --accel-bind=gn python -m evaluate.eval_linear_probe \
-    --save-frequency 50 \
+accelerate launch \
+  --num_machines $ARNOLD_WORKER_NUM \
+  --machine_rank $ARNOLD_ID \
+  --num_processes $NUM_TOTAL_GPU \
+  --main_process_ip $ARNOLD_WORKER_0_HOST \
+  --main_process_port $(echo $ARNOLD_WORKER_0_PORT | cut -d"," -f2) \
+  --dynamo_backend "no" \
+  --mixed_precision "no" \
+    -m evaluate.eval_linear_probe \
+    --save-frequency 20 \
     --save-top-performance 3 \
     --save-most-recent \
     --dataset-type="toy" \
     --precision="fp32" \
     --warmup 0 \
-    --batch-size=160 \
+    --batch-size=96 \
     --lr=1e-4 \
     --wd=0.1 \
     --epochs=100 \
@@ -49,21 +79,23 @@ srun --comment clap --cpu_bind=v --accel-bind=gn python -m evaluate.eval_linear_
     --freeze-text \
     --amodel HTSAT-base \
     --tmodel roberta \
+    --train-data '/mnt/bn/tanman-yg/chenqi/datas/InstructSpeech_Dataset_filtered/*.parquet' \
+    --val-data '/mnt/bn/tanman-yg/chenqi/datas/InstructSpeech_Dataset_eval_filtered/*.parquet' \
     --report-to "wandb" \
     --wandb-notes "finetune-instruct" \
     --datasetnames "instruct" \
     --datasetinfos "train" \
     --seed 3407 \
     --remotedata \
-    --logs /mnt/fast/nobackup/scratch4weeks/yc01815/clap/finetuning/0721 \
+    --logs /mnt/bn/tanman-yg/chenqi/code/StyleClap/exp/${EXP_NAME} \
     --gather-with-grad \
     --lp-loss="ce" \
     --lp-metrics="acc" \
     --lp-lr=1e-4 \
     --lp-mlp \
-    --class-label-path="../class_labels/ESC50_class_labels_indices_space.json" \
-    --openai-model-cache-dir /fsx/yusong/transformers_cache \
-    --pretrained="/fsx/clap_logs/2022_10_14-04_05_14-model_PANN-14-lr_0.0001-b_160-j_6-p_fp32/checkpoints" \
+    --lp-out-ch 28 \
+    --openai-model-cache-dir /mnt/bn/tanman-yg/chenqi/code/StyleClap/pretrained/ \
+    --pretrained="/mnt/bn/tanman-yg/chenqi/code/StyleClap/pretrained/" \
     --data-filling "repeatpad" \
     --data-truncating "rand_trunc" \
     --optimizer "adam"

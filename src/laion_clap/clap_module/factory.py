@@ -62,6 +62,7 @@ def load_state_dict(checkpoint_path: str, map_location="cpu", skip_params=True):
         
         # removing position_ids to maintain compatibility with latest transformers update        
         if version.parse(transformers.__version__) >= version.parse("4.31.0") and "text_branch.embeddings.position_ids" in state_dict:
+            print("remove position_ids to maintain compatibility with latest transformers update")
             del state_dict["text_branch.embeddings.position_ids"]
     # for k in state_dict:
     #     if k.startswith('transformer'):

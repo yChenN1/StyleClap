@@ -10,6 +10,7 @@ import logging
 import torch
 import librosa
 from clap_module import create_model
+from clap_module import LinearProbe
 from .training.data import get_audio_features
 from .training.data import int16_to_float32, float32_to_int16
 
@@ -57,6 +58,7 @@ class CLAP_Module(torch.nn.Module):
                 device=device,
                 enable_fusion=enable_fusion
             )
+
         self.enable_fusion = enable_fusion
         self.model = model
         self.model_cfg = model_cfg
@@ -218,3 +220,109 @@ class CLAP_Module(torch.nn.Module):
         return text_embed
         
     
+class CLAP_LP(CLAP_Module):
+    def __init__(self, enable_fusion=False, device=None, amodel= 'HTSAT-tiny', tmodel='roberta') -> None:
+        """Initialize CLAP Model
+
+        Parameters
+        ----------
+        enable_fusion: bool
+            if true, it will create the fusion clap model, otherwise non-fusion clap model (default: false) 
+        device: str
+            if None, it will automatically detect the device (gpu or cpu)
+        amodel: str
+            audio encoder architecture, default: HTSAT-tiny
+        tmodel: str
+            text encoder architecture, default: roberta
+        """
+        super(CLAP_LP, self).__init__()
+        if device is None:
+            device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+
+        precision = 'fp32'
+
+        if enable_fusion:
+            fusion_type = 'aff_2d'
+            model, model_cfg = create_model(
+                amodel,
+                tmodel,
+                precision=precision,
+                device=device,
+                enable_fusion=enable_fusion,
+                fusion_type=fusion_type
+            )
+        else:
+            model, model_cfg = create_model(
+                amodel,
+                tmodel,
+                precision=precision,
+                device=device,
+                enable_fusion=enable_fusion
+            )
+        model = LinearProbe(model, mlp=True, freeze=False, in_ch=512, out_ch=28, act='None').to(device)
+        self.enable_fusion = enable_fusion
+        self.model = model
+        self.model_cfg = model_cfg
+        self.device = device
+        # self.tokenize = RobertaTokenizer.from_pretrained('roberta-base')
+
+        
+    def forward(self, x, use_tensor=False):
+        self.model.eval()
+        audio_input = []
+        for f in x:
+            # load the waveform of the shape (T,), should resample to 48000
+            audio_waveform, _ = librosa.load(f, sr=48000)           
+            # quantize
+            audio_waveform = int16_to_float32(float32_to_int16(audio_waveform))
+            audio_waveform = torch.from_numpy(audio_waveform).float()
+            temp_dict = {}
+            temp_dict = get_audio_features(
+                temp_dict, audio_waveform, 480000, 
+                data_truncating='fusion' if self.enable_fusion else 'rand_trunc', 
+                data_filling='repeatpad',
+                audio_cfg=self.model_cfg['audio_cfg'],
+                require_grad=audio_waveform.requires_grad
+            )
+            audio_input.append(temp_dict)
+        audio_input[0]['waveform'] = audio_input[0]['waveform'].unsqueeze(0)
+        logits = self.model(audio_input[0], device=self.device)
+        pred = logits.argmax(dim=1)
+        if not use_tensor:
+            pred = pred.detach().cpu().numpy()
+        return logits, pred
+
+
+    def forward(self, x, use_tensor=False):
+        self.model.eval()
+        audio_input = []
+        for f in x:
+            # load the waveform of the shape (T,), should resample to 48000
+            audio_waveform, _ = librosa.load(f, sr=48000)           
+            # quantize
+            audio_waveform = int16_to_float32(float32_to_int16(audio_waveform))
+            audio_waveform = torch.from_numpy(audio_waveform).float()
+            temp_dict = {}
+            temp_dict = get_audio_features(
+                temp_dict, audio_waveform, 480000, 
+                data_truncating='fusion' if self.enable_fusion else 'rand_trunc', 
+                data_filling='repeatpad',
+                audio_cfg=self.model_cfg['audio_cfg'],
+                require_grad=audio_waveform.requires_grad
+            )
+            audio_input.append(temp_dict)
+        audio_input[0]['waveform'] = audio_input[0]['waveform'].unsqueeze(0)
+        logits = self.model(audio_input[0], device=self.device)
+        pred = logits.argmax(dim=1)
+        if not use_tensor:
+            pred = pred.detach().cpu().numpy()
+        return logits, pred
+    
+
+    def forward_with_feature(self, x, use_tensor=False):
+        self.model.eval()
+        logits = self.model(x, device=self.device)
+        pred = logits.argmax(dim=1)
+        if not use_tensor:
+            pred = pred.detach().cpu().numpy()
+        return logits, pred

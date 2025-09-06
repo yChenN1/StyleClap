@@ -251,7 +251,10 @@ def get_map(pred, target):
 
 def get_acc(pred, target):
     pred = torch.argmax(pred,1).numpy()
-    target = torch.argmax(target,1).numpy()
+    if len(target.shape) == 1:
+        target = target.numpy()
+    else:
+        target = torch.argmax(target,1).numpy()
     return accuracy_score(target, pred)
 
 def get_mauc(pred, target):
@@ -285,7 +288,10 @@ class LPMetrics(object):
 
 
 def calc_celoss(pred, target):
-    target = torch.argmax(target, 1).long()
+    if len(target.shape) == 1:
+        target = target.long()
+    else:
+        target = torch.argmax(target, 1).long()
     return nn.CrossEntropyLoss()(pred, target)
 
 

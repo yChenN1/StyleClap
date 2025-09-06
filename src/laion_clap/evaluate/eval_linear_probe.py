@@ -28,7 +28,7 @@ except ImportError:
     hvd = None
 
 from clap_module import create_model_and_transforms, trace_model, create_model
-from training.data import get_data, get_toy_dataset
+from training.data_instruct import get_data, get_toy_dataset
 from training.params import parse_args
 from training.distributed import is_master, init_distributed_device, world_info_from_env
 from training.logger import setup_logging
@@ -248,7 +248,6 @@ def main():
             config=vars(args),
         )
         logging.debug("Finished loading wandb.")
-
     for idx, f in enumerate(pretrained_ckpts):
         logging.info(f"pretrained on {f}")
         args.pretrained = f
@@ -282,7 +281,6 @@ def lp_main(args, device, writer, pretrain_epoch, idx):
     torch.cuda.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     np.random.seed(args.seed)
-    # args.class_index_dict = load_class_label(args.class_label_path)
 
 
     # Create CLAP model
@@ -299,15 +297,13 @@ def lp_main(args, device, writer, pretrain_epoch, idx):
         enable_fusion=args.enable_fusion,
         fusion_type=args.fusion_type
     )
-    __import__('ipdb').set_trace()
     
-    # args.lp_out_ch = len(list(args.class_index_dict.keys()))
     # Linear Probe 
     if idx == 0:
         logging.info(f"linear probe using mlp: {args.lp_mlp}")
         logging.info(f"linear probe using freeze: {args.lp_freeze}")
         logging.info(f"linear probe act layer: {args.lp_act}")
-        # logging.info(f"linear probe out ch: {args.lp_out_ch}")
+        logging.info(f"linear probe out ch: {args.lp_out_ch}")
         logging.info(f"linear probe learning rate (if applicable): {args.lp_lr}")
         logging.info(f"linear probe loss func: {args.lp_loss}")
         logging.info(f"linear probe lp_metrics: {args.lp_metrics}")
@@ -351,24 +347,7 @@ def lp_main(args, device, writer, pretrain_epoch, idx):
             model, device_ids=[device], find_unused_parameters=True, **ddp_args
         )
 
-    # data = get_data(args, clap_model_cfg)
-     
-    data_split = load_dataset(
-        'parquet',
-        data_files={
-            'train': [
-                '/mnt/fast/nobackup/scratch4weeks/yc01815/llasa/dataset/VST_chunks/*.parquet',
-            ]
-        },
-        split='train',
-    )
-    train_test_split = data_split.train_test_split(test_size=0.005)
-    train_dataset_raw = train_test_split["train"]
-    test_dataset_raw = train_test_split["test"]
-    train_dataset = get_toy_dataset(train_dataset_raw)
-    test_dataset = get_toy_dataset(test_dataset_raw)
-    data['train'] = train_dataset
-    data['eval'] = test_dataset
+    data = get_data(args, clap_model_cfg)
 
     # assert len(data), "At least one train or eval dataset must be specified."
     if args.trace:
@@ -382,7 +361,7 @@ def lp_main(args, device, writer, pretrain_epoch, idx):
     start_epoch = 0
     if args.resume is not None:
         if os.path.isfile(args.resume):
-            checkpoint = torch.load(args.resume, map_location=device)
+            checkpoint = torch.load(args.resume, map_location=device, weights_only=False)
             if "epoch" in checkpoint:
                 # resuming a train checkpoint w/ epoch and optimizer state
                 start_epoch = checkpoint["epoch"]

@@ -1,4 +1,8 @@
 exp/
+eval/
 *.log
 *.pyc
 *.pt
+*.csv
+*.wav
+src/laion_clap/wandb
