@@ -99,7 +99,7 @@ for da in data:
                 "waveform": torch.tensor(waveform).unsqueeze(0),
             }
         logits, pred = model.forward_with_feature(data_dict)
-        preds.append(pred)
+        preds.append(pred[0])
         gts.append(gt)
         metrics = calculate_metrics(preds, gts)
         print(metrics)
