@@ -79,13 +79,13 @@ model.load_ckpt('/mnt/bn/tanman-yg/chenqi/code/StyleClap/exp/0903style/2025_09_0
 
 data_file = '/mnt/bn/tanman-yg/chenqi/code/StyleClap/experiment_scripts/tmp_valid.csv'
 # data_file = '/mnt/bn/tanman-yg/chenqi/code/LlasaEdit/LLaSA_training/data_instruction/EN_description.csv'
-# data = pd.read_csv(data_file).to_dict(orient='records')
+data = pd.read_csv(data_file).to_dict(orient='records')
 base_path = '/mnt/bn/tanman-yg/chenqi/datas/InstructSpeech_Dataset_eval_filtered'
-data = pd.read_parquet(base_path).to_dict(orient='records')
+# data = pd.read_parquet(base_path).to_dict(orient='records')
 
 gts = []
 preds = []
-input_type = 'from_feat'
+input_type = 'from_path'
 for da in data:
     if input_type == 'from_feat':
         gt = int(da['emotion_code'])
@@ -98,13 +98,14 @@ for da in data:
         data_dict = {
                 "waveform": torch.tensor(waveform).unsqueeze(0),
             }
-        logits, pred = model.forward_with_feature(data_dict)
+        logits, pred, _ = model.forward_with_feature(data_dict)
         preds.append(pred[0])
         gts.append(gt)
-        metrics = calculate_metrics(preds, gts)
-        print(metrics)
+        
     elif input_type == 'from_path':
         source_audio = f"{base_path}/{da['audio_path']}"
-        logits, pred = model([source_audio])
-    
+        logits, pred, audio_embed = model([source_audio])
 
+if input_type == 'from_feat':
+    metrics = calculate_metrics(preds, gts)
+    print(metrics)

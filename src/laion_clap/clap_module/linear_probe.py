@@ -42,7 +42,7 @@ class LinearProbe(nn.Module):
         elif act == 'sigmoid':
             self.act = nn.Sigmoid()
 
-    def forward(self, x, mix_lambda=None, device=None):
+    def forward(self, x, mix_lambda=None, device=None, return_embedding=False):
         """
         Args:
             x: waveform, torch.tensor [batch, t_samples] / batch of mel_spec and longer list
@@ -60,4 +60,6 @@ class LinearProbe(nn.Module):
         out = self.lp_layer(x)
         if self.act is not None:
             out = self.act(out)
+        if return_embedding:
+            return out, x
         return out

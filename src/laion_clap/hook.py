@@ -321,8 +321,8 @@ class CLAP_LP(CLAP_Module):
 
     def forward_with_feature(self, x, use_tensor=False):
         self.model.eval()
-        logits = self.model(x, device=self.device)
+        logits, audio_embed = self.model(x, device=self.device, return_embedding=True)
         pred = logits.argmax(dim=1)
         if not use_tensor:
             pred = pred.detach().cpu().numpy()
-        return logits, pred
+        return logits, pred, audio_embed
